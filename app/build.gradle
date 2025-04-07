@@ -1,0 +1,42 @@
+plugins {
+    id('com.android.application')
+    id('com.android.library')
+    id('org.jetbrains.kotlin.android')
+}
+lintOptions {
+    abortOnError false
+}
+
+android {
+    namespace 'com.example.bashgahnagah'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId "com.example.bashgahnagah"
+        minSdk 31
+        targetSdk 35
+        versionCode 1
+        versionName "1.0"
+
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_23
+        targetCompatibility JavaVersion.VERSION_23
+    }
+}
+
+dependencies {
+    implementation "androidx.appcompat:appcompat:1.6.1"
+    implementation 'androidx.compose.material:material:1.6.1'
+    testImplementation 'androidx.test.ext:junit:1.1.5'
+    implementation 'androidx.compose.ui:ui-test-junit4:1.7.1'
+    androidTestImplementation 'androidx.test.espresso:espresso-core:3.5.0'
+}

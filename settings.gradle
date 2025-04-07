@@ -1,0 +1,22 @@
+pluginManagement {
+    repositories {
+        mavenLocal()
+        maven {url 'C:\\Users\\Mirza\\.m2\\repository'}
+        jcenter()
+        google()
+        mavenCentral()
+        gradlePluginPortal()
+    }
+}
+dependencyResolutionManagement {
+    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+    repositories {
+        mavenLocal()
+        mavenCentral()
+        jcenter()
+        maven { url 'https://maven.google.com' }
+    }
+}
+
+rootProject.name = "bashgahnagah"
+include ':app'
