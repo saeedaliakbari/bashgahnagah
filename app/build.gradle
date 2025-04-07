@@ -1,6 +1,7 @@
 plugins {
-    id('com.android.application')
+    id 'com.android.application'
 }
+
 
 android {
     namespace 'com.example.bashgahnagah'
@@ -20,12 +21,18 @@ android {
         abortOnError false
         ignoreWarnings true //false
     }
-    compileOptions {
-        sourceCompatibility JavaVersion.VERSION_17
-        targetCompatibility JavaVersion.VERSION_17
+    buildTypes {
+
+
+        release {
+            minifyEnabled true // Enables code shrinking for the release build type.
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+        }
     }
 }
 
 dependencies {
-    implementation "androidx.appcompat:appcompat:1.6.1"
+    implementation project(":lib")
+    implementation 'androidx.appcompat:appcompat:1.7.0'
+    implementation fileTree(dir: 'libs', include: ['*.jar'])
 }
