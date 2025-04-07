@@ -1,5 +1,6 @@
 pluginManagement {
     repositories {
+        maven{ url 'https://maven-central.storage.googleapis.com/'}
         google()
         mavenCentral()
         gradlePluginPortal()
