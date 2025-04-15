@@ -226,7 +226,7 @@ public class messageWorker extends Worker {
             // 3. نمایش نوتیفیکیشن
             if (statusUpdated) {
                 showNotification("پیام ارسال شد",
-                        "پیام به شماره " + message.phone + " ارسال شد");
+                        "پیام"+message.message+" به شماره " + message.phone + " ارسال شد");
             }
         }
     }
