@@ -30,15 +30,21 @@
             android:id="@+id/duration"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:inputType="number"
-            android:layout_gravity="center"
-            android:text="مدت زمان"/>
+            android:minHeight="80dp"
+            android:textSize="16sp"
+            android:gravity="center"
+            android:textAlignment="center"
+            android:maxLines="2"
+            android:ellipsize="none"
+            android:padding="12dp"
+            android:text="تعیین زمان"
+            />
         <Button
             android:id="@+id/registerJobButton"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_centerInParent="true"
             android:layout_gravity="center"
-            android:text="ثبت در پس زمینه" />
+            android:text="اجرای برنامه" />
     </LinearLayout>
 </RelativeLayout>

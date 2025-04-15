@@ -29,8 +29,10 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.lang.reflect.Type;
 import java.nio.charset.StandardCharsets;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 
 import android.telephony.SmsManager;
@@ -43,6 +45,7 @@ public class messageWorker extends Worker {
     private static final String AUTH_TOKEN = "Bearer e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
     private static final int CONNECTION_TIMEOUT = 10000; // 10 seconds
     private static final int READ_TIMEOUT = 10000; // 10 seconds
+    private static Set<String> sentMessageIds = new HashSet<>();
 
     public messageWorker(@NonNull Context context, @NonNull WorkerParameters workerParams) {
         super(context, workerParams);
@@ -216,6 +219,10 @@ public class messageWorker extends Worker {
     private void processSingleMessage(Message message, SubscriptionInfo simInfo) {
         Log.d(TAG, "Processing message ID: " + message.id + ", Phone: " + message.phone);
 
+        if (sentMessageIds.contains(message.id)) {
+            Log.d(TAG, "Message ID " + message.id + " already sent. Skipping.");
+            return; // پیام قبلاً ارسال شده، پس از ارسال آن جلوگیری می‌کنیم
+        }
         // 1. ارسال پیامک
         boolean smsSent = sendSmsMessage(message, simInfo);
 
@@ -228,6 +235,8 @@ public class messageWorker extends Worker {
                 showNotification("پیام ارسال شد",
                         "پیام"+message.message+" به شماره " + message.phone + " ارسال شد");
             }
+            // اضافه کردن شناسه پیام به مجموعه پس از ارسال موفق
+            sentMessageIds.add(String.valueOf(message.id));
         }
     }
 

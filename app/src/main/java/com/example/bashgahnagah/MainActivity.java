@@ -9,6 +9,7 @@ import android.content.pm.PackageManager;
 import android.icu.util.Calendar;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Handler;
 import android.telephony.SubscriptionInfo;
 import android.telephony.SubscriptionManager;
 import android.util.Log;
@@ -47,6 +48,12 @@ public class MainActivity extends AppCompatActivity {
     private int selectedHour = 0;
     private int selectedMinute = 3; // مقدار پیش‌فرض 3 دقیقه
 
+    private Handler handler = new Handler();
+    private Runnable updateTimerRunnable;
+
+    private boolean hasTriggeredWorker = false;
+
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -60,6 +67,11 @@ public class MainActivity extends AppCompatActivity {
 
         // 3. ایجاد کانال نوتیفیکیشن
         createNotificationChannel();
+
+        startTimerUpdater();
+
+        updateTimeButtonText();
+
     }
 
     /**
@@ -189,9 +201,62 @@ public class MainActivity extends AppCompatActivity {
      */
     private void updateTimeButtonText() {
         Button timeButton = findViewById(R.id.duration);
-        String timeText = String.format("%02d ساعت و %02d دقیقه", selectedHour, selectedMinute);
+        timeButton.setSingleLine(false); // اجازه نمایش چند خط
+        timeButton.setMaxLines(3); // تا ۳ خط نمایش بده
+        timeButton.setTextSize(14); // سایز فونت مناسب
+
+        String timeText = String.format("%02d دقیقه", selectedMinute);
+
+        // گرفتن مقدارهای ذخیره‌شده
+        long lastRegistered = getSharedPreferences("prefs", MODE_PRIVATE)
+                .getLong("last_registered_time", -1);
+        long intervalMinutes = getSharedPreferences("prefs", MODE_PRIVATE)
+                .getLong("interval_minutes", -1);
+
+        if (lastRegistered != -1 && intervalMinutes > 0) {
+            long now = System.currentTimeMillis();
+            long intervalMillis = intervalMinutes * 60 * 1000;
+            long elapsed = now - lastRegistered;
+            long remaining = intervalMillis - (elapsed % intervalMillis);
+
+            long remainingSeconds = (remaining / 1000);
+            long minutes = remainingSeconds / 60;
+            long seconds = remainingSeconds % 60;
+
+            timeText += String.format("\n(اجرای بعدی تا %02d:%02d دیگر)", minutes, seconds);
+
+            // اگر زمان به صفر رسید و هنوز اجرا نشده، اجرا کن
+            if (remainingSeconds <= 0 && !hasTriggeredWorker) {
+                hasTriggeredWorker = true;
+
+                EditText fetchEditText = findViewById(R.id.fetch);
+                EditText postEditText = findViewById(R.id.post);
+
+                Data inputData = new Data.Builder()
+                        .putString("fetch", fetchEditText.getText().toString())
+                        .putString("post", postEditText.getText().toString())
+                        .putInt("cardId", selectedSimId)
+                        .build();
+
+                runMessageWorkerNow(inputData);
+            } else if (remainingSeconds > 0) {
+                hasTriggeredWorker = false; // ریست فلگ
+            }
+        }
+
         timeButton.setText(timeText);
     }
+
+
+    private void runMessageWorkerNow(Data inputData) {
+        androidx.work.OneTimeWorkRequest oneTimeWorkRequest =
+                new androidx.work.OneTimeWorkRequest.Builder(messageWorker.class)
+                        .setInputData(inputData)
+                        .build();
+
+        WorkManager.getInstance(this).enqueue(oneTimeWorkRequest);
+    }
+
 
     /**
      * اعتبارسنجی ورودی‌ها
@@ -246,6 +311,14 @@ public class MainActivity extends AppCompatActivity {
                 "کار پس‌زمینه با موفقیت ثبت شد\nبازه زمانی: هر " +
                         selectedHour + " ساعت و " + selectedMinute + " دقیقه",
                 Toast.LENGTH_LONG).show();
+
+        // ذخیره زمان ثبت کار در SharedPreferences
+        getSharedPreferences("prefs", MODE_PRIVATE)
+                .edit()
+                .putLong("last_registered_time", System.currentTimeMillis())
+                .putLong("interval_minutes", selectedHour * 60L + selectedMinute)
+                .apply();
+
     }
 
     /**
@@ -293,4 +366,25 @@ public class MainActivity extends AppCompatActivity {
             }
         }
     }
+
+    private void startTimerUpdater() {
+        updateTimerRunnable = new Runnable() {
+            @Override
+            public void run() {
+                updateTimeButtonText();
+                handler.postDelayed(this, 1000); // تکرار هر ۱ ثانیه
+            }
+        };
+        handler.post(updateTimerRunnable);
+    }
+
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        if (handler != null && updateTimerRunnable != null) {
+            handler.removeCallbacks(updateTimerRunnable);
+        }
+    }
+
+
 }
