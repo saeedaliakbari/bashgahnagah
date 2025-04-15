@@ -1,5 +1,6 @@
 package com.example.bashgahnagah;
 
+import android.Manifest;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.content.Context;
@@ -10,6 +11,7 @@ import android.telephony.SubscriptionManager;
 import android.util.Log;
 
 import androidx.annotation.NonNull;
+import androidx.annotation.RequiresPermission;
 import androidx.core.app.ActivityCompat;
 import androidx.core.app.NotificationCompat;
 import androidx.work.Worker;
@@ -24,143 +26,311 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
-import java.net.MalformedURLException;
-import java.net.ProtocolException;
 import java.net.URL;
 import java.lang.reflect.Type;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.Objects;
+import java.util.UUID;
 
 import android.telephony.SmsManager;
 
 public class messageWorker extends Worker {
-
+    // Constants
     private static final String CHANNEL_ID = "background_notification_channel";
-    private static final String TAG = "messageWorker";
-    private static final String AUTH_TOKEN = "Bearer e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"; // Replace with your actual token
+    private static final String CHANNEL_NAME = "Background Notifications";
+    private static final String TAG = "MessageWorker";
+    private static final String AUTH_TOKEN = "Bearer e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+    private static final int CONNECTION_TIMEOUT = 10000; // 10 seconds
+    private static final int READ_TIMEOUT = 10000; // 10 seconds
 
     public messageWorker(@NonNull Context context, @NonNull WorkerParameters workerParams) {
         super(context, workerParams);
     }
 
+    @RequiresPermission(Manifest.permission.READ_PHONE_STATE)
     @NonNull
     @Override
     public Result doWork() {
-        // Perform background task here
-        Log.d(TAG, "Background job is running... fetching @ "+getInputData().getString("fetch")+ "sending @"+getInputData().getString("post"));
-        try {
-            URL url = new URL(getInputData().getString("fetch"));
+        // 1. ابتدا کانال نوتیفیکیشن را ایجاد می‌کنیم
+        createNotificationChannel();
 
-            HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+        Log.d(TAG, "Background job started. Fetch URL: " + getInputData().getString("fetch") +
+                ", Post URL: " + getInputData().getString("post"));
+
+        try {
+            // 2. دریافت لیست پیام‌ها از سرور
+            List<Message> messages = fetchMessagesFromServer();
+            if (messages == null || messages.isEmpty()) {
+                Log.d(TAG, "No messages to process");
+                return Result.success(); // اگر پیامی نیست، موفق برگردان
+            }
+
+            // 3. بررسی مجوزهای لازم
+            if (!checkRequiredPermissions()) {
+                showNotification("خطای دسترسی", "دسترسی‌های لازم وجود ندارد");
+                return Result.failure();
+            }
+
+            // 4. دریافت اطلاعات سیم‌کارت
+            SubscriptionInfo simInfo = getSimCardInfo();
+            if (simInfo == null) {
+                showNotification("خطای سیم‌کارت", "سیم‌کارت فعال یافت نشد");
+                return Result.failure();
+            }
+
+            // 5. پردازش هر پیام
+            for (Message message : messages) {
+                processSingleMessage(message, simInfo);
+            }
+
+            Log.d(TAG, "Background job completed successfully");
+            return Result.success();
+
+        } catch (Exception e) {
+            Log.e(TAG, "Error in doWork: " + e.getMessage(), e);
+            showNotification("خطا", "خطا در پردازش پیام‌ها: " + e.getMessage());
+            return Result.failure();
+        }
+    }
+
+    /**
+     * ایجاد کانال نوتیفیکیشن برای اندروید 8 به بالا
+     */
+    private void createNotificationChannel() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            NotificationChannel channel = new NotificationChannel(
+                    CHANNEL_ID,
+                    CHANNEL_NAME,
+                    NotificationManager.IMPORTANCE_HIGH
+            );
+            channel.setDescription("Notifications for background message processing");
+
+            NotificationManager manager = getApplicationContext()
+                    .getSystemService(NotificationManager.class);
+            if (manager != null) {
+                manager.createNotificationChannel(channel);
+            }
+        }
+    }
+
+    /**
+     * دریافت لیست پیام‌ها از سرور
+     */
+    private List<Message> fetchMessagesFromServer() throws IOException {
+        URL url = new URL(Objects.requireNonNull(getInputData().getString("fetch")));
+        HttpURLConnection connection = null;
+        BufferedReader reader = null;
+
+        try {
+            connection = (HttpURLConnection) url.openConnection();
             connection.setRequestMethod("GET");
             connection.setRequestProperty("Authorization", AUTH_TOKEN);
+            connection.setConnectTimeout(CONNECTION_TIMEOUT);
+            connection.setReadTimeout(READ_TIMEOUT);
             connection.connect();
 
             int responseCode = connection.getResponseCode();
-
-            if (responseCode == HttpURLConnection.HTTP_OK) {
-                BufferedReader reader = new BufferedReader(new InputStreamReader(connection.getInputStream()));
-                StringBuilder jsonResponse = new StringBuilder();
-                String line;
-
-                while ((line = reader.readLine()) != null) {
-                    jsonResponse.append(line);
-                }
-                reader.close();
-
-                Gson gson = new Gson();
-                Type listType = new TypeToken<List<Message>>() {
-                }.getType();
-                List<Message> messages = gson.fromJson(jsonResponse.toString(), listType);
-                URL postUrl = new URL(getInputData().getString("post"));
-                Log.d(TAG, "messages: " + messages.toString());
-                if (ActivityCompat.checkSelfPermission(getApplicationContext(), android.Manifest.permission.READ_PHONE_STATE) != PackageManager.PERMISSION_GRANTED) {
-return Result.failure();
-                }
-//                SubscriptionInfo simInfo = getApplicationContext().getSystemService(SubscriptionManager.class).getActiveSubscriptionInfoList().get(getInputData().getInt("cardId",1));
-                List<SubscriptionInfo> activeSubs = getApplicationContext()
-                        .getSystemService(SubscriptionManager.class)
-                        .getActiveSubscriptionInfoList();
-
-                int cardId = getInputData().getInt("cardId", 1);
-                SubscriptionInfo simInfo = null;
-
-                if (activeSubs != null && activeSubs.size() > cardId) {
-                    simInfo = activeSubs.get(cardId);
-                } else {
-                    // مدیریت حالت خطا - مثلاً استفاده از سیم‌کارت پیش‌فرض
-                    if (activeSubs != null && !activeSubs.isEmpty()) {
-                        simInfo = activeSubs.get(0); // اولین سیم‌کارت
-                    }
-                }
-                if (simInfo == null) {
-                    Log.e(TAG, "No SIM card available");
-                    return Result.failure();
-                }
-                for (Message message : messages) {
-                    Log.d(TAG, "Sending SMS to: " + message.phone + ", Content: " + message.message);
-                    try{
-                        SmsManager.getSmsManagerForSubscriptionId(simInfo.getSubscriptionId()).sendTextMessage(message.phone, null, message.message, null, null);
-                    }catch (Exception e){
-                        Log.e(TAG, "SMS sending failed: " + e.getMessage());
-                        continue;
-                    }
-                    connection = (HttpURLConnection) postUrl.openConnection();
-                    connection.setRequestMethod("POST");
-                    connection.setRequestProperty("Content-Type", "application/x-www-form-urlencoded");
-                    connection.setRequestProperty("Authorization", AUTH_TOKEN);
-                    connection.setDoOutput(true);
-                    String formData = "id=" + message.id;
-                    byte[] postData = formData.getBytes(StandardCharsets.UTF_8);
-                    OutputStream postOutputStream = connection.getOutputStream();
-                    postOutputStream.write(postData);
-                    postOutputStream.flush();
-                    postOutputStream.close();
-                    responseCode = connection.getResponseCode();
-                    Log.d(TAG, "Response Code: " + responseCode);
-                    NotificationCompat.Builder builder = new NotificationCompat.Builder(getApplicationContext(), CHANNEL_ID)
-                            .setSmallIcon(android.R.drawable.ic_dialog_info)
-                            .setContentTitle(message.id+"شناسه : ")
-                            .setContentText("ارسال به"+message.phone+"با متن"+ message.message)
-                            .setPriority(NotificationCompat.PRIORITY_HIGH);
-                    NotificationManager notificationManager = (NotificationManager) getApplicationContext().getSystemService(Context.NOTIFICATION_SERVICE);
-                    if (notificationManager != null) {
-                        int notificationId = message.id; // یا یک ID منحصر به فرد دیگر
-                        notificationManager.notify(notificationId, builder.build());
-                    }
-                }
-
-
-
-
-
-            } else {
+            if (responseCode != HttpURLConnection.HTTP_OK) {
                 Log.e(TAG, "Failed to fetch messages. Response code: " + responseCode);
-                NotificationCompat.Builder builder = new NotificationCompat.Builder(getApplicationContext(), CHANNEL_ID)
-                        .setSmallIcon(android.R.drawable.ic_dialog_info)
-                        .setContentTitle("failure")
-                        .setContentText("Failed to fetch messages. Response code: " + responseCode)
-                        .setPriority(NotificationCompat.PRIORITY_HIGH);
+                showNotification("خطای سرور", "خطا در دریافت پیام‌ها. کد: " + responseCode);
+                return null;
+            }
 
-                NotificationManager notificationManager = (NotificationManager) getApplicationContext().getSystemService(Context.NOTIFICATION_SERVICE);
-                if (notificationManager != null) {
-                    notificationManager.notify(1, builder.build());
+            reader = new BufferedReader(new InputStreamReader(connection.getInputStream()));
+            StringBuilder jsonResponse = new StringBuilder();
+            String line;
+
+            while ((line = reader.readLine()) != null) {
+                jsonResponse.append(line);
+            }
+
+            Gson gson = new Gson();
+            Type listType = new TypeToken<List<Message>>() {}.getType();
+            return gson.fromJson(jsonResponse.toString(), listType);
+
+        } finally {
+            if (reader != null) {
+                try {
+                    reader.close();
+                } catch (IOException e) {
+                    Log.e(TAG, "Error closing reader", e);
                 }
             }
-        } catch (Exception e) {
-            NotificationCompat.Builder builder = new NotificationCompat.Builder(getApplicationContext(), CHANNEL_ID)
-                    .setSmallIcon(android.R.drawable.ic_dialog_info)
-                    .setContentTitle("failure")
-                    .setContentText(e.toString())
-                    .setPriority(NotificationCompat.PRIORITY_HIGH);
-
-            NotificationManager notificationManager = (NotificationManager) getApplicationContext().getSystemService(Context.NOTIFICATION_SERVICE);
-            if (notificationManager != null) {
-                notificationManager.notify(1, builder.build());
+            if (connection != null) {
+                connection.disconnect();
             }
         }
-        Log.d(TAG, "Background job completed!");
-        return Result.success();
     }
 
+    /**
+     * بررسی مجوزهای لازم
+     */
+    private boolean checkRequiredPermissions() {
+        if (ActivityCompat.checkSelfPermission(getApplicationContext(),
+                android.Manifest.permission.READ_PHONE_STATE) != PackageManager.PERMISSION_GRANTED) {
+            Log.e(TAG, "READ_PHONE_STATE permission not granted");
+            return false;
+        }
+
+        if (ActivityCompat.checkSelfPermission(getApplicationContext(),
+                android.Manifest.permission.SEND_SMS) != PackageManager.PERMISSION_GRANTED) {
+            Log.e(TAG, "SEND_SMS permission not granted");
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * دریافت اطلاعات سیم‌کارت
+     */
+    @RequiresPermission(Manifest.permission.READ_PHONE_STATE)
+    private SubscriptionInfo getSimCardInfo() {
+        SubscriptionManager subscriptionManager = getApplicationContext()
+                .getSystemService(SubscriptionManager.class);
+
+        if (subscriptionManager == null) {
+            Log.e(TAG, "SubscriptionManager is null");
+            return null;
+        }
+
+        List<SubscriptionInfo> activeSubs = subscriptionManager.getActiveSubscriptionInfoList();
+        if (activeSubs == null || activeSubs.isEmpty()) {
+            Log.e(TAG, "No active SIM cards found");
+            return null;
+        }
+
+        int cardId = getInputData().getInt("cardId", 0); // Default to first SIM
+        if (cardId >= 0 && cardId < activeSubs.size()) {
+            return activeSubs.get(cardId);
+        } else {
+            Log.w(TAG, "Invalid cardId, using first SIM card");
+            return activeSubs.get(0); // استفاده از سیم‌کارت اول به عنوان پیش‌فرض
+        }
+    }
+
+    /**
+     * پردازش یک پیام واحد (ارسال SMS و بروزرسانی وضعیت)
+     */
+    private void processSingleMessage(Message message, SubscriptionInfo simInfo) {
+        Log.d(TAG, "Processing message ID: " + message.id + ", Phone: " + message.phone);
+
+        // 1. ارسال پیامک
+        boolean smsSent = sendSmsMessage(message, simInfo);
+
+        // 2. فقط اگر پیامک ارسال شد، وضعیت را بروزرسانی کن
+        if (smsSent) {
+            boolean statusUpdated = updateMessageStatus(message);
+
+            // 3. نمایش نوتیفیکیشن
+            if (statusUpdated) {
+                showNotification("پیام ارسال شد",
+                        "پیام به شماره " + message.phone + " ارسال شد");
+            }
+        }
+    }
+
+    /**
+     * ارسال پیامک
+     */
+    private boolean sendSmsMessage(Message message, SubscriptionInfo simInfo) {
+        try {
+            Log.d(TAG, "Attempting to send SMS to: " + message.phone);
+
+            SmsManager smsManager = SmsManager.getSmsManagerForSubscriptionId(
+                    simInfo.getSubscriptionId());
+            smsManager.sendTextMessage(
+                    message.phone,
+                    null,
+                    message.message,
+                    null,
+                    null);
+
+            Log.d(TAG, "SMS sent successfully to: " + message.phone);
+            return true;
+
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to send SMS to " + message.phone + ": " + e.getMessage(), e);
+            showNotification("خطای ارسال",
+                    "خطا در ارسال پیام به شماره " + message.phone + ": " + e.getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * بروزرسانی وضعیت پیام در سرور
+     */
+    private boolean updateMessageStatus(Message message) {
+        HttpURLConnection connection = null;
+        OutputStream outputStream = null;
+
+        try {
+            URL postUrl = new URL(Objects.requireNonNull(getInputData().getString("post")));
+            connection = (HttpURLConnection) postUrl.openConnection();
+            connection.setRequestMethod("POST");
+            connection.setRequestProperty("Content-Type", "application/x-www-form-urlencoded");
+            connection.setRequestProperty("Authorization", AUTH_TOKEN);
+            connection.setDoOutput(true);
+            connection.setConnectTimeout(CONNECTION_TIMEOUT);
+            connection.setReadTimeout(READ_TIMEOUT);
+
+            String formData = "id=" + message.id;
+            byte[] postData = formData.getBytes(StandardCharsets.UTF_8);
+
+            outputStream = connection.getOutputStream();
+            outputStream.write(postData);
+            outputStream.flush();
+
+            int responseCode = connection.getResponseCode();
+            if (responseCode == HttpURLConnection.HTTP_OK) {
+                Log.d(TAG, "Message status updated successfully for ID: " + message.id);
+                return true;
+            } else {
+                Log.e(TAG, "Failed to update message status. Response code: " + responseCode);
+                return false;
+            }
+
+        } catch (Exception e) {
+            Log.e(TAG, "Error updating message status: " + e.getMessage(), e);
+            return false;
+        } finally {
+            if (outputStream != null) {
+                try {
+                    outputStream.close();
+                } catch (IOException e) {
+                    Log.e(TAG, "Error closing output stream", e);
+                }
+            }
+            if (connection != null) {
+                connection.disconnect();
+            }
+        }
+    }
+
+    /**
+     * نمایش نوتیفیکیشن
+     */
+    private void showNotification(String title, String message) {
+        try {
+            NotificationCompat.Builder builder = new NotificationCompat.Builder(
+                    getApplicationContext(), CHANNEL_ID)
+                    .setSmallIcon(android.R.drawable.ic_dialog_info)
+                    .setContentTitle(title)
+                    .setContentText(message)
+                    .setPriority(NotificationCompat.PRIORITY_HIGH)
+                    .setAutoCancel(true);
+
+            NotificationManager notificationManager = (NotificationManager)
+                    getApplicationContext().getSystemService(Context.NOTIFICATION_SERVICE);
+
+            if (notificationManager != null) {
+                // استفاده از یک ID منحصر به فرد برای هر نوتیفیکیشن
+                int notificationId = UUID.randomUUID().hashCode();
+                notificationManager.notify(notificationId, builder.build());
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "Error showing notification: " + e.getMessage(), e);
+        }
+    }
 }
