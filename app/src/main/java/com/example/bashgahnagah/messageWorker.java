@@ -108,17 +108,20 @@ return Result.failure();
                     postOutputStream.close();
                     responseCode = connection.getResponseCode();
                     Log.d(TAG, "Response Code: " + responseCode);
+                    NotificationCompat.Builder builder = new NotificationCompat.Builder(getApplicationContext(), CHANNEL_ID)
+                            .setSmallIcon(android.R.drawable.ic_dialog_info)
+                            .setContentTitle(message.id+"id")
+                            .setContentText("ارسال پیامک با موفقیت انجام شد")
+                            .setPriority(NotificationCompat.PRIORITY_HIGH);
+                    NotificationManager notificationManager = (NotificationManager) getApplicationContext().getSystemService(Context.NOTIFICATION_SERVICE);
+                    if (notificationManager != null) {
+                        notificationManager.notify(1, builder.build());
+                    }
                 }
-                NotificationCompat.Builder builder = new NotificationCompat.Builder(getApplicationContext(), CHANNEL_ID)
-                        .setSmallIcon(android.R.drawable.ic_dialog_info)
-                        .setContentTitle("ارسال پیامک")
-                        .setContentText("ارسال پیامک با موفقیت انجام شد")
-                        .setPriority(NotificationCompat.PRIORITY_HIGH);
 
-                NotificationManager notificationManager = (NotificationManager) getApplicationContext().getSystemService(Context.NOTIFICATION_SERVICE);
-                if (notificationManager != null) {
-                    notificationManager.notify(1, builder.build());
-                }
+
+
+
 
             } else {
                 Log.e(TAG, "Failed to fetch messages. Response code: " + responseCode);

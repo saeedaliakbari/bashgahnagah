@@ -36,9 +36,9 @@ import java.util.concurrent.TimeUnit;
 public class MainActivity extends AppCompatActivity {
 
     private static final int PERMISSION_REQUEST_CODE = 1;
-    public int simId = 1;
+    public int simId = 0;
     int hour=0;
-    int minute=15;
+    int minute=3;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
