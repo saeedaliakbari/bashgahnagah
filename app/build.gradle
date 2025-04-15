@@ -9,18 +9,13 @@ android {
 
     defaultConfig {
         applicationId "com.example.bashgahnagah"
-        minSdk 31
+        minSdk 29
         targetSdk 35
         versionCode 1
         versionName "1.0"
 
     }
 
-    lintOptions {
-        checkReleaseBuilds false
-        abortOnError false
-        ignoreWarnings true //false
-    }
     buildTypes {
 
 
@@ -29,10 +24,17 @@ android {
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
     }
+    lint {
+        abortOnError false
+        checkReleaseBuilds false
+        ignoreWarnings true
+    }
 }
 
 dependencies {
     implementation 'androidx.appcompat:appcompat:1.7.0'
     implementation 'com.google.code.gson:gson:2.12.1'
     implementation "androidx.work:work-runtime:2.8.0"
+    implementation(platform("org.jetbrains.kotlin:kotlin-bom:1.8.0"))
+    implementation 'com.google.android.material:material:1.11.0'
 }

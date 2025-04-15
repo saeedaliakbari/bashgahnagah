@@ -2,11 +2,43 @@
 <RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent">
-
-    <Button
-        android:id="@+id/registerJobButton"
+    <LinearLayout
+        android:orientation="vertical"
         android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
         android:layout_centerInParent="true"
-        android:text="Register Background Job" />
+        android:layout_centerHorizontal="true"
+        android:layout_height="wrap_content">
+        <EditText
+            android:id="@+id/fetch"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:hint="https://bashgahagah.ir/sms/fetch.php"
+            android:text="https://bashgahagah.ir/sms/fetch.php"/>
+        <EditText
+            android:id="@+id/post"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:hint="https://bashgahagah.ir/sms/send.php"
+            android:text="https://bashgahagah.ir/sms/send.php"/>
+        <Spinner
+            android:id="@+id/sims"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:background="@android:drawable/btn_dropdown"
+            android:spinnerMode="dropdown"/>
+        <Button
+            android:id="@+id/duration"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:inputType="number"
+            android:layout_gravity="center"
+            android:text="مدت زمان"/>
+        <Button
+            android:id="@+id/registerJobButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_centerInParent="true"
+            android:layout_gravity="center"
+            android:text="ثبت در پس زمینه" />
+    </LinearLayout>
 </RelativeLayout>
