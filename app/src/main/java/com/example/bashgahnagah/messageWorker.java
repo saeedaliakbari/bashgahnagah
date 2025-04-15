@@ -93,8 +93,18 @@ return Result.failure();
                         simInfo = activeSubs.get(0); // اولین سیم‌کارت
                     }
                 }
+                if (simInfo == null) {
+                    Log.e(TAG, "No SIM card available");
+                    return Result.failure();
+                }
                 for (Message message : messages) {
-                    SmsManager.getSmsManagerForSubscriptionId(simInfo.getSubscriptionId()).sendTextMessage(message.phone, null, message.message, null, null);
+                    Log.d(TAG, "Sending SMS to: " + message.phone + ", Content: " + message.message);
+                    try{
+                        SmsManager.getSmsManagerForSubscriptionId(simInfo.getSubscriptionId()).sendTextMessage(message.phone, null, message.message, null, null);
+                    }catch (Exception e){
+                        Log.e(TAG, "SMS sending failed: " + e.getMessage());
+                        continue;
+                    }
                     connection = (HttpURLConnection) postUrl.openConnection();
                     connection.setRequestMethod("POST");
                     connection.setRequestProperty("Content-Type", "application/x-www-form-urlencoded");
@@ -110,12 +120,13 @@ return Result.failure();
                     Log.d(TAG, "Response Code: " + responseCode);
                     NotificationCompat.Builder builder = new NotificationCompat.Builder(getApplicationContext(), CHANNEL_ID)
                             .setSmallIcon(android.R.drawable.ic_dialog_info)
-                            .setContentTitle(message.id+"id")
-                            .setContentText("ارسال پیامک با موفقیت انجام شد")
+                            .setContentTitle(message.id+"شناسه : ")
+                            .setContentText("ارسال به"+message.phone+"با متن"+ message.message)
                             .setPriority(NotificationCompat.PRIORITY_HIGH);
                     NotificationManager notificationManager = (NotificationManager) getApplicationContext().getSystemService(Context.NOTIFICATION_SERVICE);
                     if (notificationManager != null) {
-                        notificationManager.notify(1, builder.build());
+                        int notificationId = message.id; // یا یک ID منحصر به فرد دیگر
+                        notificationManager.notify(notificationId, builder.build());
                     }
                 }
 
