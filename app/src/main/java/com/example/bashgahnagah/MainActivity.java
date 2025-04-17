@@ -46,61 +46,42 @@ public class MainActivity extends AppCompatActivity {
 
     private int selectedSimId = 0;
     private int selectedHour = 0;
-    private int selectedMinute = 3; // مقدار پیش‌فرض 3 دقیقه
+    private int selectedMinute = 3;
 
     private Handler handler = new Handler();
     private Runnable updateTimerRunnable;
 
     private boolean hasTriggeredWorker = false;
 
-
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
-        // 1. مقداردهی اولیه ویوها
+        selectedSimId = getSharedPreferences("prefs", MODE_PRIVATE).getInt("selectedSimId", 0);
+
         initViews();
-
-        // 2. بررسی و درخواست مجوزها
         checkAndRequestPermissions();
-
-        // 3. ایجاد کانال نوتیفیکیشن
         createNotificationChannel();
-
         startTimerUpdater();
-
         updateTimeButtonText();
-
     }
 
-    /**
-     * مقداردهی اولیه ویوها و تنظیم لیسنرها
-     */
     private void initViews() {
         EditText fetchAddressEditText = findViewById(R.id.fetch);
         EditText postAddressEditText = findViewById(R.id.post);
         Button timePickerButton = findViewById(R.id.duration);
         Spinner simSpinner = findViewById(R.id.sims);
         Button registerJobButton = findViewById(R.id.registerJobButton);
+        Button cancelJobButton = findViewById(R.id.cancelJobButton);
 
-        // 1. تنظیم انتخابگر زمان
         timePickerButton.setOnClickListener(view -> showTimePickerDialog());
 
-        // 2. پر کردن اسپینر سیم‌کارت‌ها
         if (ActivityCompat.checkSelfPermission(this, Manifest.permission.READ_PHONE_STATE) != PackageManager.PERMISSION_GRANTED) {
-            // TODO: Consider calling
-            //    ActivityCompat#requestPermissions
-            // here to request the missing permissions, and then overriding
-            //   public void onRequestPermissionsResult(int requestCode, String[] permissions,
-            //                                          int[] grantResults)
-            // to handle the case where the user grants the permission. See the documentation
-            // for ActivityCompat#requestPermissions for more details.
             return;
         }
         setupSimSpinner(simSpinner);
 
-        // 3. ثبت کار پس‌زمینه
         registerJobButton.setOnClickListener(v -> {
             String fetchUrl = fetchAddressEditText.getText().toString();
             String postUrl = postAddressEditText.getText().toString();
@@ -109,11 +90,13 @@ public class MainActivity extends AppCompatActivity {
                 registerBackgroundJob(fetchUrl, postUrl, selectedSimId);
             }
         });
+
+        cancelJobButton.setOnClickListener(v -> {
+            WorkManager.getInstance(this).cancelUniqueWork(WORK_TAG);
+            Toast.makeText(this, "کار پس‌زمینه لغو شد", Toast.LENGTH_SHORT).show();
+        });
     }
 
-    /**
-     * بررسی و درخواست مجوزهای لازم
-     */
     private void checkAndRequestPermissions() {
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_PHONE_STATE) != PackageManager.PERMISSION_GRANTED
                 || ContextCompat.checkSelfPermission(this, Manifest.permission.SEND_SMS) != PackageManager.PERMISSION_GRANTED) {
@@ -129,9 +112,6 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    /**
-     * تنظیم اسپینر سیم‌کارت‌ها
-     */
     @RequiresPermission(Manifest.permission.READ_PHONE_STATE)
     private void setupSimSpinner(Spinner simSpinner) {
         SubscriptionManager subscriptionManager = ContextCompat.getSystemService(this, SubscriptionManager.class);
@@ -159,14 +139,15 @@ public class MainActivity extends AppCompatActivity {
         );
 
         simSpinner.setAdapter(adapter);
+        simSpinner.setSelection(selectedSimId);
         simSpinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
             @Override
             public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
-                if (subscriptionInfos != null && position < subscriptionInfos.size()) {
-                    selectedSimId = position;
-                } else {
-                    selectedSimId = 0;
-                }
+                selectedSimId = position;
+                getSharedPreferences("prefs", MODE_PRIVATE)
+                        .edit()
+                        .putInt("selectedSimId", selectedSimId)
+                        .apply();
             }
 
             @Override
@@ -176,9 +157,6 @@ public class MainActivity extends AppCompatActivity {
         });
     }
 
-    /**
-     * نمایش دیالوگ انتخاب زمان
-     */
     private void showTimePickerDialog() {
         TimePickerDialog timePickerDialog = new TimePickerDialog(
                 this,
@@ -189,25 +167,21 @@ public class MainActivity extends AppCompatActivity {
                 },
                 selectedHour,
                 selectedMinute,
-                true // 24-hour format
+                true
         );
 
         timePickerDialog.setTitle("انتخاب بازه زمانی");
         timePickerDialog.show();
     }
 
-    /**
-     * بروزرسانی متن دکمه زمان
-     */
     private void updateTimeButtonText() {
         Button timeButton = findViewById(R.id.duration);
-        timeButton.setSingleLine(false); // اجازه نمایش چند خط
-        timeButton.setMaxLines(3); // تا ۳ خط نمایش بده
-        timeButton.setTextSize(14); // سایز فونت مناسب
+        timeButton.setSingleLine(false);
+        timeButton.setMaxLines(3);
+        timeButton.setTextSize(14);
 
         String timeText = String.format("%02d دقیقه", selectedMinute);
 
-        // گرفتن مقدارهای ذخیره‌شده
         long lastRegistered = getSharedPreferences("prefs", MODE_PRIVATE)
                 .getLong("last_registered_time", -1);
         long intervalMinutes = getSharedPreferences("prefs", MODE_PRIVATE)
@@ -225,28 +199,30 @@ public class MainActivity extends AppCompatActivity {
 
             timeText += String.format("\n(اجرای بعدی تا %02d:%02d دیگر)", minutes, seconds);
 
-            // اگر زمان به صفر رسید و هنوز اجرا نشده، اجرا کن
             if (remainingSeconds <= 0 && !hasTriggeredWorker) {
                 hasTriggeredWorker = true;
 
                 EditText fetchEditText = findViewById(R.id.fetch);
                 EditText postEditText = findViewById(R.id.post);
+                String fetch = fetchEditText.getText().toString();
+                String post = postEditText.getText().toString();
 
-                Data inputData = new Data.Builder()
-                        .putString("fetch", fetchEditText.getText().toString())
-                        .putString("post", postEditText.getText().toString())
-                        .putInt("cardId", selectedSimId)
-                        .build();
+                if (!fetch.isEmpty() && !post.isEmpty()) {
+                    Data inputData = new Data.Builder()
+                            .putString("fetch", fetch)
+                            .putString("post", post)
+                            .putInt("cardId", selectedSimId)
+                            .build();
 
-                runMessageWorkerNow(inputData);
+                    runMessageWorkerNow(inputData);
+                }
             } else if (remainingSeconds > 0) {
-                hasTriggeredWorker = false; // ریست فلگ
+                hasTriggeredWorker = false;
             }
         }
 
         timeButton.setText(timeText);
     }
-
 
     private void runMessageWorkerNow(Data inputData) {
         androidx.work.OneTimeWorkRequest oneTimeWorkRequest =
@@ -257,10 +233,6 @@ public class MainActivity extends AppCompatActivity {
         WorkManager.getInstance(this).enqueue(oneTimeWorkRequest);
     }
 
-
-    /**
-     * اعتبارسنجی ورودی‌ها
-     */
     private boolean validateInputs(String fetchUrl, String postUrl) {
         if (fetchUrl.isEmpty() || postUrl.isEmpty()) {
             Toast.makeText(this, "لطفا آدرس‌ها را وارد کنید", Toast.LENGTH_SHORT).show();
@@ -275,55 +247,43 @@ public class MainActivity extends AppCompatActivity {
         return true;
     }
 
-    /**
-     * ثبت کار پس‌زمینه
-     */
     private void registerBackgroundJob(String fetchUrl, String postUrl, int simId) {
-        // 1. ایجاد داده‌های ورودی
         Data inputData = new Data.Builder()
                 .putString("fetch", fetchUrl)
                 .putString("post", postUrl)
                 .putInt("cardId", simId)
                 .build();
 
-        // 2. محاسبه بازه زمانی بر اساس ساعت و دقیقه
         long repeatInterval = selectedHour * 60 + selectedMinute;
-        repeatInterval = Math.max(repeatInterval, 1); // حداقل 1 دقیقه
+        repeatInterval = Math.max(repeatInterval, 1);
 
-        // 3. ایجاد درخواست کار تناوبی
-        PeriodicWorkRequest workRequest = new PeriodicWorkRequest.Builder(
-                messageWorker.class,
-                repeatInterval,
-                TimeUnit.MINUTES
-        )
-                .setInputData(inputData)
-                .build();
-
-        // 4. ثبت کار با سیاست جایگزینی کارهای قبلی
-        WorkManager.getInstance(this)
-                .enqueueUniquePeriodicWork(
-                        WORK_TAG,
-                        ExistingPeriodicWorkPolicy.REPLACE,
-                        workRequest
-                );
+//        PeriodicWorkRequest workRequest = new PeriodicWorkRequest.Builder(
+//                messageWorker.class,
+//                repeatInterval,
+//                TimeUnit.MINUTES
+//        )
+//                .setInputData(inputData)
+//                .build();
+//
+//        WorkManager.getInstance(this)
+//                .enqueueUniquePeriodicWork(
+//                        WORK_TAG,
+//                        ExistingPeriodicWorkPolicy.REPLACE,
+//                        workRequest
+//                );
 
         Toast.makeText(this,
                 "کار پس‌زمینه با موفقیت ثبت شد\nبازه زمانی: هر " +
                         selectedHour + " ساعت و " + selectedMinute + " دقیقه",
                 Toast.LENGTH_LONG).show();
 
-        // ذخیره زمان ثبت کار در SharedPreferences
         getSharedPreferences("prefs", MODE_PRIVATE)
                 .edit()
                 .putLong("last_registered_time", System.currentTimeMillis())
                 .putLong("interval_minutes", selectedHour * 60L + selectedMinute)
                 .apply();
-
     }
 
-    /**
-     * ایجاد کانال نوتیفیکیشن
-     */
     private void createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             NotificationChannel channel = new NotificationChannel(
@@ -346,16 +306,8 @@ public class MainActivity extends AppCompatActivity {
 
         if (requestCode == PERMISSION_REQUEST_CODE) {
             if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-                // مجوزها داده شده، اسپینر سیم‌کارت‌ها را پر کن
                 Spinner simSpinner = findViewById(R.id.sims);
                 if (ActivityCompat.checkSelfPermission(this, Manifest.permission.READ_PHONE_STATE) != PackageManager.PERMISSION_GRANTED) {
-                    // TODO: Consider calling
-                    //    ActivityCompat#requestPermissions
-                    // here to request the missing permissions, and then overriding
-                    //   public void onRequestPermissionsResult(int requestCode, String[] permissions,
-                    //                                          int[] grantResults)
-                    // to handle the case where the user grants the permission. See the documentation
-                    // for ActivityCompat#requestPermissions for more details.
                     return;
                 }
                 setupSimSpinner(simSpinner);
@@ -372,7 +324,7 @@ public class MainActivity extends AppCompatActivity {
             @Override
             public void run() {
                 updateTimeButtonText();
-                handler.postDelayed(this, 1000); // تکرار هر ۱ ثانیه
+                handler.postDelayed(this, 1000);
             }
         };
         handler.post(updateTimerRunnable);
@@ -385,6 +337,4 @@ public class MainActivity extends AppCompatActivity {
             handler.removeCallbacks(updateTimerRunnable);
         }
     }
-
-
 }

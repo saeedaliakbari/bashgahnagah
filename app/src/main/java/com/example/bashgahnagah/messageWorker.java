@@ -4,6 +4,7 @@ import android.Manifest;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.content.Context;
+import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.os.Build;
 import android.telephony.SubscriptionInfo;
@@ -47,6 +48,9 @@ public class messageWorker extends Worker {
     private static final int READ_TIMEOUT = 10000; // 10 seconds
     private static Set<String> sentMessageIds = new HashSet<>();
 
+    private static final long DELAY_BETWEEN_MESSAGES = 2000; // 2 ثانیه تاخیر بین پیام‌ها
+    private static final String PREF_SENT_MESSAGES = "sent_messages";
+
     public messageWorker(@NonNull Context context, @NonNull WorkerParameters workerParams) {
         super(context, workerParams);
     }
@@ -82,10 +86,13 @@ public class messageWorker extends Worker {
                 return Result.failure();
             }
 
-            // 5. پردازش هر پیام
-            for (Message message : messages) {
-                processSingleMessage(message, simInfo);
-            }
+//            // 5. پردازش هر پیام
+//            for (Message message : messages) {
+//                processSingleMessage(message, simInfo);
+//            }
+            // 5. پردازش ترتیبی پیام‌ها با تاخیر
+            processMessagesSequentially(messages, simInfo);
+
 
             Log.d(TAG, "Background job completed successfully");
             return Result.success();
@@ -341,5 +348,55 @@ public class messageWorker extends Worker {
         } catch (Exception e) {
             Log.e(TAG, "Error showing notification: " + e.getMessage(), e);
         }
+    }
+
+
+    /**
+     * پردازش ترتیبی پیام‌ها با تاخیر بین آنها
+     */
+    private void processMessagesSequentially(List<Message> messages, SubscriptionInfo simInfo) {
+        // بارگذاری پیام‌های ارسال شده از SharedPreferences
+        Set<String> sentMessages = loadSentMessages();
+
+        for (Message message : messages) {
+            synchronized (this) {
+                if (sentMessages.contains(message.id)) {
+                    Log.d(TAG, "Message ID " + message.id + " already sent. Skipping.");
+                    continue;
+                }
+
+                processSingleMessage(message, simInfo);
+
+                // ذخیره پیام ارسال شده
+                sentMessages.add(String.valueOf(message.id));
+                saveSentMessages(sentMessages);
+
+                // تاخیر بین ارسال پیام‌ها
+                try {
+                    Thread.sleep(DELAY_BETWEEN_MESSAGES);
+                } catch (InterruptedException e) {
+                    Log.e(TAG, "Delay between messages interrupted", e);
+                    Thread.currentThread().interrupt();
+                }
+            }
+        }
+    }
+    /**
+     * بارگذاری پیام‌های ارسال شده از SharedPreferences
+     */
+    private Set<String> loadSentMessages() {
+        SharedPreferences prefs = getApplicationContext().getSharedPreferences(
+                PREF_SENT_MESSAGES, Context.MODE_PRIVATE);
+        return prefs.getStringSet(PREF_SENT_MESSAGES, new HashSet<>());
+    }
+    /**
+     * ذخیره پیام‌های ارسال شده در SharedPreferences
+     */
+    private void saveSentMessages(Set<String> sentMessages) {
+        SharedPreferences prefs = getApplicationContext().getSharedPreferences(
+                PREF_SENT_MESSAGES, Context.MODE_PRIVATE);
+        prefs.edit()
+                .putStringSet(PREF_SENT_MESSAGES, sentMessages)
+                .apply();
     }
 }
